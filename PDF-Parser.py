@@ -4,8 +4,20 @@ from azure.storage.blob import BlobServiceClient
 from azure.identity import DefaultAzureCredential
 from dotenv import load_dotenv
 import os
+import logging
+import argparse
 
 load_dotenv()
+
+def setup_logging(verbosity):
+    if verbosity == 0:
+        logging.basicConfig(level=logging.WARNING)
+    elif verbosity == 1:
+        logging.basicConfig(level=logging.INFO)
+    elif verbosity >= 2:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.WARNING)
 
 def pdf_to_text(file_path):
     # Open the PDF file in binary mode
@@ -72,11 +84,19 @@ get_file_from_azurestorage(
     blob_service_client, container_name, blob_name, download_file_path
 )
 
-
-if __name__ == "__main__":
+def main():
+    parser = argparse.ArgumentParser(description="PDF Parser")
+    parser.add_argument("-v", "--verbose", help="increase output verbosity",
+                        action="count", default=0)
+    args = parser.parse_args()
+    setup_logging(args.verbose)
     # file_path = "functionalsample.pdf"
     # response = send_chat(pdf_to_text(file_path))
     # print(response)
     get_file_from_azurestorage(
         blob_service_client, container_name, blob_name, download_file_path
     )
+
+if __name__ == "__main__":
+    main()
+
