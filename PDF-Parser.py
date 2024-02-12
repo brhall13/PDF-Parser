@@ -9,6 +9,7 @@ import argparse
 
 load_dotenv()
 
+
 def setup_logging(verbosity):
     if verbosity == 0:
         logging.basicConfig(level=logging.WARNING)
@@ -84,6 +85,14 @@ get_file_from_azurestorage(
     blob_service_client, container_name, blob_name, download_file_path
 )
 
+# Create a ContainerClient
+container_client = blob_service_client.get_container_client(container_name)
+
+# List the blobs in the container
+blob_list = container_client.list_blobs()
+for blob in blob_list:
+    print(blob.name + "\n")
+
 def main():
     parser = argparse.ArgumentParser(description="PDF Parser")
     parser.add_argument("-v", "--verbose", help="increase output verbosity",
@@ -93,6 +102,12 @@ def main():
     # file_path = "functionalsample.pdf"
     # response = send_chat(pdf_to_text(file_path))
     # print(response)
+    # get_file_from_azurestorage(blob_service_client, container_name, blob_name, download_file_path)
+    for blob in blob_list:
+        print(blob.name + "\n")
+        get_file_from_azurestorage(
+            blob_service_client, container_name, blob.name, download_file_path
+        )
     get_file_from_azurestorage(
         blob_service_client, container_name, blob_name, download_file_path
     )
