@@ -9,6 +9,7 @@ import argparse
 
 load_dotenv()
 
+
 def setup_logging(verbosity):
     if verbosity == 0:
         logging.basicConfig(level=logging.WARNING)
@@ -18,6 +19,7 @@ def setup_logging(verbosity):
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.WARNING)
+
 
 def pdf_to_text(file_path):
     # Open the PDF file in binary mode
@@ -77,26 +79,27 @@ blob_service_client = BlobServiceClient.from_connection_string(connection_string
 print(connection_string)
 
 container_name = "resumes"
-blob_name = "Abigail Carpentier Resume Sample.pdf"
-download_file_path = "PDFS/" + blob_name
+download_file_path = "PDFS/"
 
-get_file_from_azurestorage(
-    blob_service_client, container_name, blob_name, download_file_path
-)
 
 def main():
+    container_client = blob_service_client.get_container_client(container_name)
+    blob_list = container_client.list_blobs()
     parser = argparse.ArgumentParser(description="PDF Parser")
-    parser.add_argument("-v", "--verbose", help="increase output verbosity",
-                        action="count", default=0)
+    parser.add_argument(
+        "-v", "--verbose", help="increase output verbosity", action="count", default=0
+    )
     args = parser.parse_args()
     setup_logging(args.verbose)
-    # file_path = "functionalsample.pdf"
-    # response = send_chat(pdf_to_text(file_path))
-    # print(response)
-    get_file_from_azurestorage(
-        blob_service_client, container_name, blob_name, download_file_path
-    )
+    for blob in blob_list:
+        print(blob.name + "\n")
+        get_file_from_azurestorage(
+            blob_service_client,
+            container_name,
+            blob.name,
+            download_file_path + blob.name,
+        )
+
 
 if __name__ == "__main__":
     main()
-
