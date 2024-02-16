@@ -1,9 +1,13 @@
 {
   "IsEncrypted": false,
   "Values": {
-    "AzureWebJobsStorage": "DefaultEndpointsProtocol=https;AccountName=bcpdfparser;AccountKey=BJu5gnh081qYTMGtb9Xlx/Bqx2s6Pi4yZIfnmNjtz/SIVpXNieI6w7qCEUzamyDoAwS8E4R/BRmQ+ASttejQXg==;EndpointSuffix=core.windows.net",
+    "AzureWebJobsStorage": "DefaultEndpointsProtocol=https;AccountName=bcpdfparser;AccountKey=pMalkGkzY+ucGyRzFQe08S9RHIYhZqynEfRQA7hYhUj5XN0guM4n1AsPNs0q1hTcR1VArGZcYaZm+AStHXtB1w==;EndpointSuffix=core.windows.net",
     "FUNCTIONS_WORKER_RUNTIME": "python",
     "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
-    "bcpdfparser_STORAGE": "DefaultEndpointsProtocol=https;AccountName=bcpdfparser;AccountKey=BJu5gnh081qYTMGtb9Xlx/Bqx2s6Pi4yZIfnmNjtz/SIVpXNieI6w7qCEUzamyDoAwS8E4R/BRmQ+ASttejQXg==;EndpointSuffix=core.windows.net"
+    "bcpdfparser_STORAGE": "DefaultEndpointsProtocol=https;AccountName=bcpdfparser;AccountKey=pMalkGkzY+ucGyRzFQe08S9RHIYhZqynEfRQA7hYhUj5XN0guM4n1AsPNs0q1hTcR1VArGZcYaZm+AStHXtB1w==;EndpointSuffix=core.windows.net",
+    "ACCOUNT_HOST": "https://bc-redis.documents.azure.com:443/",
+    "ACCOUNT_KEY": "4N7JWVQ4M4dd0z3dF0cITBYxf6iOzk67Qb5cUzBfbilnLNFGYmpp6fLDFqIsVkL55Rw848pKCvhYACDbdCtbew==",
+    "COSMOS_DATABASE": "resumes",
+    "COSMOS_CONTAINER": "items"
   }
 }
