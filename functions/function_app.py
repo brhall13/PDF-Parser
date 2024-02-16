@@ -1,4 +1,5 @@
 import PyPDF2
+import logging
 import os
 import json
 import uuid
@@ -14,7 +15,7 @@ from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 # Initialize the function app
 app = func.FunctionApp()
 
-# Set the environment variables
+# Set the environment variables 
 HOST = os.getenv("ACCOUNT_HOST")
 MASTER_KEY = os.getenv("ACCOUNT_KEY")
 DATABASE_ID = os.getenv("COSMOS_DATABASE")
@@ -62,6 +63,31 @@ def move_blob(blob_service_client, resumes_blob, destination_container_name):
     # Delete the source blob
     source_blob.delete_blob()
     return destination_blob.url
+
+# Receive PDF from HTTP request
+@app.function_name('receivePDF')
+@app.route(route='receivePDF', methods=['POST'], auth_level=func.AuthLevel.ANONYMOUS)
+def receive_pdf(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info('Python HTTP trigger function processed a request.')
+
+    file = req.files['fileToUpload'].stream.read()
+    filename = req.files['fileToUpload'].filename
+
+    blob_service_client = BlobServiceClient.from_connection_string(
+        os.environ["bcpdfparser_STORAGE"]
+    )
+
+    if not file:
+        return func.HttpResponse(
+             "No file found in the request",
+             status_code=400
+        )
+
+    # Push pdf to blob storage
+    blob_client = blob_service_client.get_blob_client("resumes", filename)
+    blob_client.upload_blob(file)
+
+    return func.HttpResponse(f"File {filename} has been received and saved.")
 
 
 @app.blob_trigger(arg_name="myblob", path="resumes", connection="bcpdfparser_STORAGE")

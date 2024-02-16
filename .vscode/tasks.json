@@ -5,6 +5,9 @@
 			"type": "func",
 			"label": "func: host start",
 			"command": "host start",
+			"options": {
+				"cwd": "${workspaceFolder}/functions"
+			},
 			"problemMatcher": "$func-python-watch",
 			"isBackground": true,
 			"dependsOn": "pip install (functions)"
@@ -13,7 +16,7 @@
 			"label": "pip install (functions)",
 			"type": "shell",
 			"osx": {
-				"command": "${config:azureFunctions.pythonVenv}/bin/python -m pip install -r requirements.txt"
+				"command": "functions/${config:azureFunctions.pythonVenv}/bin/python -m pip install -r functions/requirements.txt"
 			},
 			"windows": {
 				"command": "${config:azureFunctions.pythonVenv}\\Scripts\\python -m pip install -r requirements.txt"
