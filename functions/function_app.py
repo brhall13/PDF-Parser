@@ -70,13 +70,17 @@ def move_blob(blob_service_client, resumes_blob, destination_container_name):
 def receive_pdf(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
 
+    # Get the file from the request
     file = req.files['fileToUpload'].stream.read()
+    # Get the filename
     filename = req.files['fileToUpload'].filename
 
+    # Initialize the Blob Service client
     blob_service_client = BlobServiceClient.from_connection_string(
         os.environ["bcpdfparser_STORAGE"]
     )
 
+    # Return an error if no file is found
     if not file:
         return func.HttpResponse(
              "No file found in the request",
