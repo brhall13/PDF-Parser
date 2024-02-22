@@ -4,13 +4,21 @@ import os
 import json
 import uuid
 import io
+import logging
 from openai import OpenAI
 import azure.functions as func
 import azure.cosmos.documents as documents
 import azure.cosmos.cosmos_client as cosmos_client
 import azure.cosmos.exceptions as exceptions
 from azure.cosmos.partition_key import PartitionKey
+from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+
+
+
+# logger=logging.getLogger(__name__)
+# logger.setLevel(logging.INFO)
+
 
 # Initialize the function app
 app = func.FunctionApp()
@@ -68,7 +76,7 @@ def move_blob(blob_service_client, resumes_blob, destination_container_name):
 @app.function_name('receivePDF')
 @app.route(route='receivePDF', methods=['POST'], auth_level=func.AuthLevel.ANONYMOUS)
 def receive_pdf(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python HTTP trigger function processed a request.')
+    logging.info('Document found in Azure Storage.')
 
     # Get the file from the request
     file = req.files['fileToUpload'].stream.read()
