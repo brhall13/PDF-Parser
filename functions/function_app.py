@@ -5,6 +5,7 @@ import json
 import uuid
 import io
 import logging
+from datetime import datetime, timezone
 from openai import OpenAI
 import azure.functions as func
 import azure.cosmos.documents as documents
@@ -75,28 +76,54 @@ def move_blob(blob_service_client, resumes_blob, destination_container_name):
 @app.function_name('receivePDF')
 @app.route(route='receivePDF', methods=['POST'], auth_level=func.AuthLevel.ANONYMOUS)
 def receive_pdf(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Document found in Azure Storage.')
+    logging.info('receive_pdf(): Receiving a PDF file. ')
 
-    # Get the file from the request
-    file = req.files['fileToUpload'].stream.read()
-    # Get the filename
-    filename = req.files['fileToUpload'].filename
+    # Check if req.files is not None
+    if 'fileToUpload' not in req.files:
+        logging.error('receive_pdf(): No file found in the request under the name "fileToUpload"')
+        return func.HttpResponse(
+            "receive_pdf(): No file found in the request under the name 'fileToUpload'",
+            status_code=400
+        )
+    
+    # Try except block to catch any exceptions
+    try:
+        # Get the file from the request
+        file = req.files['fileToUpload'].stream.read()
+        # Get the filename
+        filename = datetime().isoformat + '_' + req.files['fileToUpload'].filename
+        
+    except Exception as e:
+        logging.error("receive_pdf(): An error occurred while reading the file: %s", e)
+        return func.HttpResponse(
+            f"receive_pdf(): An error occurred while reading the file: {e}",
+            status_code=500
+        )
 
+    # Check if os.environ["bcpdfparser_STORAGE"] is not None
+    if 'bcpdfparser_STORAGE' not in os.environ:
+        logging.error('receive_pdf(): The environment variable "bcpdfparser_STORAGE" is not set.')
+        return func.HttpResponse(
+            "receive_pdf(): The environment variable 'bcpdfparser_STORAGE' is not set.",
+            status_code=500
+        )
     # Initialize the Blob Service client
     blob_service_client = BlobServiceClient.from_connection_string(
         os.environ["bcpdfparser_STORAGE"]
     )
+    
+    # Try except block to catch any exceptions
+    try:
+        # Push pdf to blob storage
+        blob_client = blob_service_client.get_blob_client("resumes", filename)
+        blob_client.upload_blob(file)
 
-    # Return an error if no file is found
-    if not file:
+    except Exception as e:
+        logging.error("receive_pdf(): An error occurred while uploading the file to blob storage: %s", e)
         return func.HttpResponse(
-             "No file found in the request",
-             status_code=400
+            f"receive_pdf(): An error occurred while uploading the file to blob storage: {e}",
+            status_code=500
         )
-
-    # Push pdf to blob storage
-    blob_client = blob_service_client.get_blob_client("resumes", filename)
-    blob_client.upload_blob(file)
 
     return func.HttpResponse(f"File {filename} has been received and saved.")
 
