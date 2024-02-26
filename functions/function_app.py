@@ -91,7 +91,7 @@ def receive_pdf(req: func.HttpRequest) -> func.HttpResponse:
         # Get the file from the request
         file = req.files['fileToUpload'].stream.read()
         # Get the filename
-        filename = datetime().isoformat + '_' + req.files['fileToUpload'].filename
+        filename = datetime.now().isoformat() + '_' + req.files['fileToUpload'].filename
         
     except Exception as e:
         logging.error("receive_pdf(): An error occurred while reading the file: %s", e)
