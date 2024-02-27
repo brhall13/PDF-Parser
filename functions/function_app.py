@@ -81,9 +81,6 @@ def receive_pdf(req: func.HttpRequest) -> func.HttpResponse:
 
     # Check if req.files is not None
     if "fileToUpload" not in req.files or req.files["fileToUpload"] is None:
-        logging.error(
-            'receive_pdf(): No file found in the request under the name "fileToUpload"'
-        )
         return func.HttpResponse(
             "receive_pdf(): No file found in the request under the name 'fileToUpload'",
             status_code=400,
@@ -95,9 +92,7 @@ def receive_pdf(req: func.HttpRequest) -> func.HttpResponse:
         file = req.files["fileToUpload"].stream.read()
         # Get the filename
         filename = datetime.now().isoformat() + "_" + req.files["fileToUpload"].filename
-
     except Exception as e:
-        logging.error("receive_pdf(): An error occurred while reading the file: %s", e)
         return func.HttpResponse(
             f"receive_pdf(): An error occurred while reading the file: {e}",
             status_code=500,
@@ -105,33 +100,23 @@ def receive_pdf(req: func.HttpRequest) -> func.HttpResponse:
 
     # Check if os.environ["bcpdfparser_STORAGE"] is not None
     if "bcpdfparser_STORAGE" not in os.environ:
-        logging.error(
-            'receive_pdf(): The environment variable "bcpdfparser_STORAGE" is not set.'
-        )
         return func.HttpResponse(
             "receive_pdf(): The environment variable 'bcpdfparser_STORAGE' is not set.",
             status_code=500,
         )
+
     # Initialize the Blob Service client
     blob_service_client = BlobServiceClient.from_connection_string(
         os.environ["bcpdfparser_STORAGE"]
     )
 
-    # Try except block to catch any exceptions
     try:
         # Push pdf to blob storage
         blob_client = blob_service_client.get_blob_client("resumes", filename)
         blob_client.upload_blob(file)
-
     except Exception as e:
-        logging.error(
-            "receive_pdf(): An error occurred while uploading the file to blob storage: %s",
-            e,
-        )
-        return func.HttpResponse(
-            f"receive_pdf(): An error occurred while uploading the file to blob storage: {e}",
-            status_code=500,
-        )
+        return error_handler(
+            "receive_pdf(): An error occurred while uploading the file to blob storage", 500, e)
 
     return func.HttpResponse(f"File {filename} has been received and saved.")
 
@@ -140,37 +125,31 @@ def receive_pdf(req: func.HttpRequest) -> func.HttpResponse:
 def pdf_loader(myblob: func.InputStream):
     # Check if myblob is not None
     if myblob is None:
-        logging.error("pdf_loader(): No blob found in the request.")
-        return func.HttpResponse(
-            "pdf_loader(): No blob found in the request.", status_code=400
-        )
-    # Read the entire PDF into file
-    file = myblob.read(size=-1)
+        return func.HttpResponse("pdf_loader(): No blob found in the request.", status_code=400)
 
+    # Try except block to catch any exceptions
+    try:
+        # Read the entire PDF into file
+        file = myblob.read(size=-1)
+    except Exception as e:
+        return error_handler("pdf_loader(): An error occurred while reading the blob", 500, e)
 
     # Check if file is not None
     if file is None:
-        logging.error("pdf_loader(): No file found in the blob.")
-        return func.HttpResponse(
-            "pdf_loader(): No file found in the blob.", status_code=400
-        )
+        return error_handler("pdf_loader(): No file found in the blob.", 400)
+    
     # Create a file-like object from the file
     f = io.BytesIO(file)
 
-    # Try except block to catch any exceptions
     try:
         # Create a PDF reader using the file-like object
         mydoc = PyPDF2.PdfReader(f)
         # Initialize an empty string to store the text
         text = ""
     except Exception as e:
-        logging.error("pdf_loader(): An error occurred while reading the PDF: %s", e)
-        return func.HttpResponse(
-            f"pdf_loader(): An error occurred while reading the PDF: {e}",
-            status_code=500,
-        )
+        return error_handler("An error occurred while reading the PDF", 500, e)
 
-    # try except block to catch any exceptions
+
     try:
         # Initialize the Cosmos DB client
         client = cosmos_client.CosmosClient(
@@ -182,54 +161,40 @@ def pdf_loader(myblob: func.InputStream):
         db = client.get_database_client(DATABASE_ID)
         container = db.get_container_client(CONTAINER_ID)
     except Exception as e:
-        logging.error(
-            "pdf_loader(): An error occurred while initializing the Cosmos DB client: %s",
-            e,
-        )
-        return func.HttpResponse(
-            f"pdf_loader(): An error occurred while initializing the Cosmos DB client: {e}",
-            status_code=500,
-        )
+        return error_handler("pdf_loader(): An error occurred while initializing the Cosmos DB client", 500, e)
 
-    # Try except block to catch any exceptions
-    try:
-        # Initialize the Blob Service client
-        blob_service_client = BlobServiceClient.from_connection_string(
-            os.environ["bcpdfparser_STORAGE"]
-        )
-    except Exception as e:
-        logging.error(
-            "pdf_loader(): An error occurred while initializing the Blob Service client: %s",
-            e,
-        )
-        return func.HttpResponse(
-            f"pdf_loader(): An error occurred while initializing the Blob Service client: {e}",
-            status_code=500,
-        )
+    container = os.environ["bcpdfparser_STORAGE"]
+    if container is None:
+        return error_handler("pdf_loader(): The container is not found.", 500)
+    
+    # Initialize the Blob Service client
+    blob_service_client = BlobServiceClient.from_connection_string(container)
 
-    # Check if mydoc.pages is not None
     if mydoc.pages is None:
-        logging.error("pdf_loader(): No pages found in the PDF.")
-        return func.HttpResponse(
-            "pdf_loader(): No pages found in the PDF.", status_code=400
-        )
+        return error_handler("pdf_loader(): No pages found in the PDF.", 400)
+    
     # Loop through each page in the PDF
     for page in mydoc.pages:
         # Extract the text from the page
         text += page.extract_text()
 
-    # Try except block to catch any exceptions
     try:
         # Call the send_chat function to summarize the text
         response = send_chat(text)
     except Exception as e:
-        logging.error(
-            "pdf_loader(): An error occurred while summarizing the text using GPT: %s", e
-        )
-        return func.HttpResponse(
-            f"pdf_loader(): An error occurred while summarizing the text using GPT: {e}",
-            status_code=500,
-        )
+        return error_handler("An error occurred while summarizing the text using GPT", 500, e)
+    
     # Move the blob to the processed container
-    uri = move_blob(blob_service_client, myblob, "processed")
-    create_item(container, response, uri)
+    try:
+        uri = move_blob(blob_service_client, myblob, "processed")
+    except Exception as e:
+        return error_handler("An error occurred while moving the blob to the processed container", 500, e)
+    
+    try:
+        create_item(container, response, uri)
+    except Exception as e:
+        return error_handler("An error occurred while creating the item in the Cosmos DB container", 500, e)
+
+def error_handler(message, status_code, exception=None):
+    logging.error(message + " " + str(exception) if exception else "")
+    return func.HttpResponse(message, status_code = status_code)
