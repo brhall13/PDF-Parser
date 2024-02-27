@@ -15,4 +15,4 @@ This project is a Python application that downloads and parses PDF files from an
 3. The script will then parse the downloaded PDF files (this functionality needs to be implemented).
 
 ## License
-[MIT](https://choosealicense.com/licenses/mit/)
+[MIT](https://choosealicense.com/licenses/mit/) 
