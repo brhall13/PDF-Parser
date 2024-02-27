@@ -39,7 +39,7 @@ def send_chat(resume_text):
         messages=[
             {
                 "role": "system",
-                "content": "You are an AI assistant helping summarize resumes, designed to output JSON.",
+                "content": "You are an AI assistant helping summarize resumes, designed to output JSON. You accurately summarize the resume into a JSON format. ",
             },
             {"role": "user", "content": resume_text},
         ],
