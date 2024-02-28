@@ -14,16 +14,15 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    # needs: build
     environment:
-      name: 'main'
-      url: ${{ steps.deploy-to-function.outputs.webapp-url }}
+      name: 'production'
+      url: ${{ steps.fa.outputs.webapp-url }}
     permissions:
       id-token: write #This is required for requesting the JWT
 
     steps:
     - name: 'Checkout GitHub Action'
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Setup Python ${{ env.PYTHON_VERSION }} Environment
       uses: actions/setup-python@v4
