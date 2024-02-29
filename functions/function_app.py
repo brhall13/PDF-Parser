@@ -39,7 +39,65 @@ def send_chat(resume_text):
         messages=[
             {
                 "role": "system",
-                "content": "You are an AI assistant helping summarize resumes, designed to output JSON. You accurately summarize the resume into a JSON format. ",
+                "content": """
+                You are an AI assistant helping summarize resumes, designed to output JSON. You accurately summarize the resume into JSON format using the following as a guide. 
+{
+"general_info": {
+"name": "John Doe",
+"address": "123 Main St, Anytown, USA",
+"phone": "(123) 456-7890",
+"email": "johndoe@example.com"
+},
+"work_history": [
+{
+"position": "Software Engineer",
+"company_name": "Company A",
+"start_date": "2015-06-01",
+"end_date": "2019-05-31"
+},
+{
+"position": "Senior Software Engineer",
+"company_name": "Company B",
+"start_date": "2019-06-01",
+"end_date": "2023-05-31"
+}
+],
+"experience": [
+{
+"role": "Software Engineer",
+"description": "Developed web applications",
+"organization": "Company A"
+},
+{
+"role": "Volunteer Teacher",
+"description": "Taught basic programming to high school students",
+"organization": "Education Foundation"
+}
+],
+"education": [
+{
+"institution_name": "University X",
+"start_date": "2011-08-01",
+"end_date": "2015-05-31",
+"certificate_degree": "Bachelor of Science in Computer Science"
+}
+],
+"skills": [
+{
+"skill_name": "Python",
+"skill_level": "Expert"
+},
+{
+"skill_name": "JavaScript",
+"skill_level": "Not Specified"
+},
+{
+"skill_name": "React",
+"skill_level": "4 years"
+}
+]
+}
+"""
             },
             {"role": "user", "content": resume_text},
         ],
@@ -48,7 +106,7 @@ def send_chat(resume_text):
 
 
 # Creates a new item in the Cosmos DB container
-def create_item(container, contents, uri):
+def add_resume_to_cosmos(container, contents, uri):
     print("\nUpserting an item\n")
     contents["id"] = str(uuid.uuid4())
     contents["resume_uri"] = uri
@@ -163,12 +221,12 @@ def pdf_loader(myblob: func.InputStream):
     except Exception as e:
         return error_handler("pdf_loader(): An error occurred while initializing the Cosmos DB client", 500, e)
 
-    container = os.environ["bcpdfparser_STORAGE"]
-    if container is None:
-        return error_handler("pdf_loader(): The container is not found.", 500)
+    blob_connection_string = os.environ["bcpdfparser_STORAGE"]
+    if blob_connection_string is None:
+        return error_handler("pdf_loader(): The bcpdfparser_STORAGE is not defined.", 500)
     
     # Initialize the Blob Service client
-    blob_service_client = BlobServiceClient.from_connection_string(container)
+    blob_service_client = BlobServiceClient.from_connection_string(blob_connection_string)
 
     if mydoc.pages is None:
         return error_handler("pdf_loader(): No pages found in the PDF.", 400)
@@ -191,7 +249,7 @@ def pdf_loader(myblob: func.InputStream):
         return error_handler("An error occurred while moving the blob to the processed container", 500, e)
     
     try:
-        create_item(container, response, uri)
+        add_resume_to_cosmos(container, response, uri)
     except Exception as e:
         return error_handler("An error occurred while creating the item in the Cosmos DB container", 500, e)
 
