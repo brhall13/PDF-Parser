@@ -32,6 +32,9 @@ CONTAINER_ID = os.getenv("COSMOS_CONTAINER")
 
 # Calls OpenAI API to summarize the text
 def send_chat(resume_text):
+    if resume_text is None or len(resume_text) < 200:
+        return "The resume is too short to summarize."
+    
     openai = OpenAI()
     response = openai.chat.completions.create(
         model="gpt-3.5-turbo-1106",
@@ -39,7 +42,65 @@ def send_chat(resume_text):
         messages=[
             {
                 "role": "system",
-                "content": "You are an AI assistant helping summarize resumes, designed to output JSON. You accurately summarize the resume into a JSON format. ",
+                "content": """
+                You are an AI assistant helping summarize resumes, designed to output JSON. You accurately summarize the resume into JSON format using the following as a guide. 
+{
+"general_info": {
+"name": "John Doe",
+"address": "123 Main St, Anytown, USA",
+"phone": "(123) 456-7890",
+"email": "johndoe@example.com"
+},
+"work_history": [
+{
+"position": "Software Engineer",
+"company_name": "Company A",
+"start_date": "2015-06-01",
+"end_date": "2019-05-31"
+},
+{
+"position": "Senior Software Engineer",
+"company_name": "Company B",
+"start_date": "2019-06-01",
+"end_date": "2023-05-31"
+}
+],
+"experience": [
+{
+"role": "Software Engineer",
+"description": "Developed web applications",
+"organization": "Company A"
+},
+{
+"role": "Volunteer Teacher",
+"description": "Taught basic programming to high school students",
+"organization": "Education Foundation"
+}
+],
+"education": [
+{
+"institution_name": "University X",
+"start_date": "2011-08-01",
+"end_date": "2015-05-31",
+"certificate_degree": "Bachelor of Science in Computer Science"
+}
+],
+"skills": [
+{
+"skill_name": "Python",
+"skill_level": "Expert"
+},
+{
+"skill_name": "JavaScript",
+"skill_level": "Not Specified"
+},
+{
+"skill_name": "React",
+"skill_level": "4 years"
+}
+]
+}
+"""
             },
             {"role": "user", "content": resume_text},
         ],
@@ -198,3 +259,57 @@ def pdf_loader(myblob: func.InputStream):
 def error_handler(message, status_code, exception=None):
     logging.error(message + " " + str(exception) if exception else "")
     return func.HttpResponse(message, status_code = status_code)
+
+@app.function_name("summarizePDF")
+@app.route(route="summarizePDF", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+def summarizePDF(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("summarizePDF(): Receiving a PDF file. ")
+
+    # Check if req.files is not None
+    if "fileToUpload" not in req.files or req.files["fileToUpload"] is None:
+        return func.HttpResponse(
+            "summarizePDF(): No file found in the request under the name 'fileToUpload'",
+            status_code=400,
+        )
+
+    # Try except block to catch any exceptions
+    try:
+        # Get the file from the request
+        file = req.files["fileToUpload"].stream.read()
+        # Get the filename
+        filename = datetime.now().isoformat() + "_" + req.files["fileToUpload"].filename
+    except Exception as e:
+        return func.HttpResponse(
+            f"summarizePDF(): An error occurred while reading the file: {e}",
+            status_code=500,
+        )
+    
+    # Create a file-like object from the file
+    f = io.BytesIO(file)
+
+    try:
+        # Create a PDF reader using the file-like object
+        mydoc = PyPDF2.PdfReader(f)
+        # Initialize an empty string to store the text
+        text = ""
+    except Exception as e:
+        return error_handler("An error occurred while reading the PDF", 500, e)
+
+
+    if mydoc.pages is None:
+        return error_handler("pdf_loader(): No pages found in the PDF.", 400)
+    
+    # Loop through each page in the PDF
+    for page in mydoc.pages:
+        # Extract the text from the page
+        text += page.extract_text()
+
+    try:
+        # Call the send_chat function to summarize the text
+        response = send_chat(text)
+    except Exception as e:
+        return error_handler("An error occurred while summarizing the text using GPT", 500, e)
+
+    return func.HttpResponse(f"{response}")
+
+
