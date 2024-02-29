@@ -256,3 +256,56 @@ def pdf_loader(myblob: func.InputStream):
 def error_handler(message, status_code, exception=None):
     logging.error(message + " " + str(exception) if exception else "")
     return func.HttpResponse(message, status_code = status_code)
+
+@app.function_name("summarizePDF")
+@app.route(route="summarizePDF", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+def summarizePDF(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("summarizePDF(): Receiving a PDF file. ")
+
+    # Check if req.files is not None
+    if "fileToUpload" not in req.files or req.files["fileToUpload"] is None:
+        return func.HttpResponse(
+            "summarizePDF(): No file found in the request under the name 'fileToUpload'",
+            status_code=400,
+        )
+
+    # Try except block to catch any exceptions
+    try:
+        # Get the file from the request
+        file = req.files["fileToUpload"].stream.read()
+        # Get the filename
+        filename = datetime.now().isoformat() + "_" + req.files["fileToUpload"].filename
+    except Exception as e:
+        return func.HttpResponse(
+            f"summarizePDF(): An error occurred while reading the file: {e}",
+            status_code=500,
+        )
+    
+    # Create a file-like object from the file
+    f = io.BytesIO(file)
+
+    try:
+        # Create a PDF reader using the file-like object
+        mydoc = PyPDF2.PdfReader(f)
+        # Initialize an empty string to store the text
+        text = ""
+    except Exception as e:
+        return error_handler("An error occurred while reading the PDF", 500, e)
+
+
+    if mydoc.pages is None:
+        return error_handler("pdf_loader(): No pages found in the PDF.", 400)
+    
+    # Loop through each page in the PDF
+    for page in mydoc.pages:
+        # Extract the text from the page
+        text += page.extract_text()
+
+    try:
+        # Call the send_chat function to summarize the text
+        response = send_chat(text)
+    except Exception as e:
+        return error_handler("An error occurred while summarizing the text using GPT", 500, e)
+
+    return func.HttpResponse(f"{response}")
+
