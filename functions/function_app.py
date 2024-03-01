@@ -130,6 +130,9 @@ def move_blob(blob_service_client, resumes_blob, destination_container_name):
     source_blob.delete_blob()
     return destination_blob.url
 
+def store_resume_text_in_blob(blob_service_client, text, filename):
+    blob_client = blob_service_client.get_blob_client("resumetext", filename)
+    blob_client.upload_blob(text)
 
 # Receive PDF from HTTP request
 @app.function_name("receivePDF")
@@ -245,6 +248,10 @@ def pdf_loader(myblob: func.InputStream):
     # Move the blob to the processed container
     try:
         uri = move_blob(blob_service_client, myblob, "processed")
+    except Exception as e:
+        return error_handler("An error occurred while moving the blob to the processed container", 500, e)
+    try:
+        store_resume_text_in_blob(blob_service_client, text, myblob.name.split("/")[-1] + ".txt")
     except Exception as e:
         return error_handler("An error occurred while moving the blob to the processed container", 500, e)
     
