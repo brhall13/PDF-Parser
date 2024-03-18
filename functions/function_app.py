@@ -20,25 +20,55 @@ from pinecone import Pinecone
 # logger=logging.getLogger(__name__)
 # logger.setLevel(logging.INFO)
 
-
 # Initialize the function app
 app = func.FunctionApp()
 
 env = Environment(loader=FileSystemLoader("templates"))
 
-# Set the environment variables
-HOST = os.getenv("ACCOUNT_HOST")
-MASTER_KEY = os.getenv("ACCOUNT_KEY")
-DATABASE_ID = os.getenv("COSMOS_DATABASE")
-CONTAINER_ID = os.getenv("COSMOS_CONTAINER")
+class settings:
+    # Initialize the environment variables
+    blob_connection_string = os.environ["BC_PDF_PARSER_STORAGE"]
+    blob_service_client = BlobServiceClient.from_connection_string(blob_connection_string)
+    HOST = os.getenv("ACCOUNT_HOST")
+    MASTER_KEY = os.getenv("ACCOUNT_KEY")
+    DATABASE_ID = os.getenv("COSMOS_DATABASE")
+    CONTAINER_ID = os.getenv("COSMOS_CONTAINER")
+    VECTORIZED_CONTAINER_ID = CONTAINER_ID + "_vector"
+    EMBEDDING_MODEL = "text-embedding-3-small"
+    OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+    PINECONE_API_KEY = os.environ["PINECONE_API_KEY"]
 
 
-VECTORIZED_CONTAINER_ID = CONTAINER_ID + "_vector"
-EMBEDDING_MODEL = "text-embedding-3-small"
+    # Initialize the Cosmos DB client
+    def get_cosmos_client(self):
+        client = cosmos_client.CosmosClient(
+            self.HOST,
+            {"masterKey": self.MASTER_KEY},
+            user_agent="PDFParser",
+            user_agent_overwrite=True,
+        )
+        return client.create_database_if_not_exists(self.DATABASE_ID)
+    
+    def get_container(self):
+        return self.get_cosmos_client().create_container_if_not_exists(self.CONTAINER_ID, PartitionKey(path="/id"))
+    
+    def get_vectorized_container(self):
+        return self.get_cosmos_client().create_container_if_not_exists(self.VECTORIZED_CONTAINER_ID, PartitionKey(path="/id"))
+    
+    # cosmos_client = cosmos_client.CosmosClient(
+    #     HOST,
+    #     {"masterKey": MASTER_KEY},
+    #     user_agent="PDFParser",
+    #     user_agent_overwrite=True,
+    # )
+    # db = cosmos_client.create_database_if_not_exists(DATABASE_ID)
+    # container = db.create_container_if_not_exists(CONTAINER_ID, PartitionKey(path="/id"))
+    # vectorized_container = db.create_container_if_not_exists(VECTORIZED_CONTAINER_ID, PartitionKey(path="/id"))
+
 
 # Calls OpenAI API to summarize the text
 def summarize_resume(resume_text):
-    openai.api_key = os.environ["OPENAI_API_KEY"]
+    openai.api_key = settings.OPENAI_API_KEY
 
     system_prompt = env.get_template("system_prompt.jinja").render()
     response = openai.chat.completions.create(
@@ -51,43 +81,44 @@ def summarize_resume(resume_text):
     )
     return json.loads(response.choices[0].message.content)
 
-def upsert_resume(container, vectorized_container, contents, storage_url):
+def upsert_resume(contents, resume_blob_location):
     guid = str(uuid.uuid4())
-    add_resume_to_cosmos(container, contents, storage_url, guid)
-    add_vectorized_resume_to_cosmos(vectorized_container, contents, guid)
+    add_resume_to_cosmos(contents, resume_blob_location, guid)
+    add_vectorized_resume_to_cosmos(contents, guid)
 
 # Creates a new item in the Cosmos DB container
-def add_resume_to_cosmos(container, contents, storage_url, guid):
+def add_resume_to_cosmos(contents, resume_blob_location, guid):
     contents["id"] = guid
-    contents["resume_uri"] = storage_url
+    contents["resume_uri"] = resume_blob_location
     try:
+        container = settings.get_container()
         response = container.create_item(body=contents)
     except Exception as e:
         print(e)
 
-def add_vectorized_resume_to_cosmos(vectorized_container, contents, guid):
+def add_vectorized_resume_to_cosmos(contents, guid):
     try:
         vectorized_contents = embed(contents["text"])
         vectorized_contents["id"] = guid
-        response = vectorized_container.create_item(body=vectorized_contents)
+        response = settings.vectorized_container.create_item(body=vectorized_contents)
     except Exception as e:
         print(e)
   
 def embed(content) -> List[float]:
-    openai.api_key = os.environ["OPENAI_API_KEY"]
+    openai.api_key = settings.OPENAI_API_KEY
     res = openai.embeddings.create(
-        input=content, model=EMBEDDING_MODEL
+        input=content, model=settings.EMBEDDING_MODEL
     )
     doc_embeds = [r.embedding for r in res.data]
     return doc_embeds
 
 # Function to move a blob to a processed container
-def move_blob(blob_service_client, resumes_blob, destination_container_name):
+def move_blob(resumes_blob, destination_container_name):
     # Get the source and destination blob clients
-    source_blob = blob_service_client.get_blob_client(
+    source_blob = settings.blob_service_client.get_blob_client(
         "resumes", resumes_blob.name.split("/")[-1]
     )
-    destination_blob = blob_service_client.get_blob_client(
+    destination_blob = settings.blob_service_client.get_blob_client(
         destination_container_name, resumes_blob.name.split("/")[-1] + str(uuid.uuid4())
     )
     # Copy the blob from the source to the destination
@@ -96,8 +127,8 @@ def move_blob(blob_service_client, resumes_blob, destination_container_name):
     source_blob.delete_blob()
     return destination_blob.url
 
-def store_resume_text_in_blob(blob_service_client, text):
-    blob_client = blob_service_client.get_blob_client("resumetext",
+def store_resume_text_in_blob(text):
+    blob_client = settings.blob_service_client.get_blob_client("resumetext",
                                                       "consolidated_resumes.txt")
     blob_client.append_block(text)
 
@@ -126,21 +157,9 @@ def receive_pdf(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
         )
 
-    # Check if os.environ["bcpdfparser_STORAGE"] is not None
-    if "bcpdfparser_STORAGE" not in os.environ:
-        return func.HttpResponse(
-            "receive_pdf(): The environment variable 'bcpdfparser_STORAGE' is not set.",
-            status_code=500,
-        )
-
-    # Initialize the Blob Service client
-    blob_service_client = BlobServiceClient.from_connection_string(
-        os.environ["bcpdfparser_STORAGE"]
-    )
-
     try:
         # Push pdf to blob storage
-        blob_client = blob_service_client.get_blob_client("resumes", filename)
+        blob_client = settings.blob_service_client.get_blob_client("resumes", filename)
         blob_client.upload_blob(file)
     except Exception as e:
         return error_handler(
@@ -149,7 +168,7 @@ def receive_pdf(req: func.HttpRequest) -> func.HttpResponse:
     return func.HttpResponse(f"File {filename} has been received and saved.")
 
 
-@app.blob_trigger(arg_name="myblob", path="resumes", connection="bcpdfparser_STORAGE")
+@app.blob_trigger(arg_name="myblob", path="resumes", connection="BC_PDF_PARSER_STORAGE")
 def pdf_loader(myblob: func.InputStream):
     # Check if myblob is not None
     if myblob is None:
@@ -166,6 +185,13 @@ def pdf_loader(myblob: func.InputStream):
     if file is None:
         return error_handler("pdf_loader(): No file found in the blob.", 400)
     
+    
+    file_location = move_blob(myblob, "processed")
+    store_resume_text_in_blob(resume_text)
+    process_pdf(file, file_location)
+    
+def process_pdf(file, file_location):
+    
     # Create a file-like object from the file
     f = io.BytesIO(file)
 
@@ -178,26 +204,9 @@ def pdf_loader(myblob: func.InputStream):
         return error_handler("An error occurred while reading the PDF", 500, e)
 
 
-    try:
-        # Initialize the Cosmos DB client
-        client = cosmos_client.CosmosClient(
-            HOST,
-            {"masterKey": MASTER_KEY},
-            user_agent="PDFParser",
-            user_agent_overwrite=True,
-        )
-        db = client.create_database_if_not_exists(DATABASE_ID)
-        container = db.create_container_if_not_exists(CONTAINER_ID, PartitionKey(path="/id"))
-        vectorized_container = db.create_container_if_not_exists(VECTORIZED_CONTAINER_ID, PartitionKey(path="/id"))
-    except Exception as e:
-        return error_handler("pdf_loader(): An error occurred while initializing the Cosmos DB client", 500, e)
 
-    blob_connection_string = os.environ["bcpdfparser_STORAGE"]
-    if blob_connection_string is None:
-        return error_handler("pdf_loader(): The bcpdfparser_STORAGE is not defined.", 500)
+
     
-    # Initialize the Blob Service client
-    blob_service_client = BlobServiceClient.from_connection_string(blob_connection_string)
 
     if mydoc.pages is None:
         return error_handler("pdf_loader(): No pages found in the PDF.", 400)
@@ -209,9 +218,8 @@ def pdf_loader(myblob: func.InputStream):
 
     summary_text = summarize_resume(resume_text)
     
-    uri = move_blob(blob_service_client, myblob, "processed")
-    store_resume_text_in_blob(blob_service_client, resume_text)
-    upsert_resume(container, vectorized_container, summary_text, uri)
+    
+    upsert_resume(summary_text, file_location)
 
 
 def error_handler(message, status_code, exception=None):
@@ -279,14 +287,14 @@ def query_resume(req: func.HttpRequest) -> func.HttpResponse:
     search = req.params.get('search')
     
     if search:
-        openai.api_key = os.environ["OPENAI_API_KEY"]
-        pinecone = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+        openai.api_key = settings.OPENAI_API_KEY
+        pinecone = Pinecone(api_key=settings.PINECONE_API_KEY)
         res = openai.embeddings.create(
-            input=search, model='text-embedding-ada-002'
+            input=search, model=settings.EMBEDDING_MODEL
         )
         doc_embeds = [r.embedding for r in res.data]
 
-        index = pinecone.Index("text-embedding-ada-002")
+        index = pinecone.Index(settings.EMBEDDING_MODEL)
         result = index.query(include_metadata=True, vector=doc_embeds[0], top_k=5)
         return func.HttpResponse(f"{result}")
     else:
