@@ -29,10 +29,5 @@ class TestFunctionApp(unittest.TestCase):
 
         add_resume_to_cosmos(contents, resume_blob_location, guid)
 
-
-
-
-
-
 if __name__ == '__main__':
     unittest.main()

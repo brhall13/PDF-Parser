@@ -17,15 +17,19 @@ from azure.cosmos.partition_key import PartitionKey
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 from pinecone import Pinecone
+from dotenv import load_dotenv
 # logger=logging.getLogger(__name__)
 # logger.setLevel(logging.INFO)
 
 # Initialize the function app
 app = func.FunctionApp()
 
+#load environment variables
+load_dotenv()
+
 env = Environment(loader=FileSystemLoader("templates"))
 
-class settings:
+class Settings:
     # Initialize the environment variables
     blob_connection_string = os.environ["BC_PDF_PARSER_STORAGE"]
     blob_service_client = BlobServiceClient.from_connection_string(blob_connection_string)
@@ -40,21 +44,25 @@ class settings:
 
 
     # Initialize the Cosmos DB client
-    def get_cosmos_client(self):
+    def get_cosmos_client():
         client = cosmos_client.CosmosClient(
-            self.HOST,
-            {"masterKey": self.MASTER_KEY},
+            Settings.HOST,
+            {"masterKey": Settings.MASTER_KEY},
             user_agent="PDFParser",
             user_agent_overwrite=True,
         )
-        return client.create_database_if_not_exists(self.DATABASE_ID)
-    
-    def get_container(self):
-        return self.get_cosmos_client().create_container_if_not_exists(self.CONTAINER_ID, PartitionKey(path="/id"))
-    
-    def get_vectorized_container(self):
-        return self.get_cosmos_client().create_container_if_not_exists(self.VECTORIZED_CONTAINER_ID, PartitionKey(path="/id"))
-    
+        return client.create_database_if_not_exists(Settings.DATABASE_ID)
+
+    @staticmethod
+    def get_container():
+        return Settings.get_cosmos_client().create_container_if_not_exists(
+            Settings.CONTAINER_ID, PartitionKey(path="/id"))
+
+    @staticmethod
+    def get_vectorized_container():
+        return Settings.get_cosmos_client().create_container_if_not_exists(
+            Settings.VECTORIZED_CONTAINER_ID, PartitionKey(path="/id"))
+
     # cosmos_client = cosmos_client.CosmosClient(
     #     HOST,
     #     {"masterKey": MASTER_KEY},
@@ -68,7 +76,7 @@ class settings:
 
 # Calls OpenAI API to summarize the text
 def summarize_resume(resume_text):
-    openai.api_key = settings.OPENAI_API_KEY
+    openai.api_key = Settings.OPENAI_API_KEY
 
     system_prompt = env.get_template("system_prompt.jinja").render()
     response = openai.chat.completions.create(
@@ -91,23 +99,24 @@ def add_resume_to_cosmos(contents, resume_blob_location, guid):
     contents["id"] = guid
     contents["resume_uri"] = resume_blob_location
     try:
-        container = settings.get_container()
+        container = Settings.get_container()
         response = container.create_item(body=contents)
     except Exception as e:
+        print("add_resume_to_cosmos: ")
         print(e)
 
 def add_vectorized_resume_to_cosmos(contents, guid):
     try:
         vectorized_contents = embed(contents["text"])
         vectorized_contents["id"] = guid
-        response = settings.vectorized_container.create_item(body=vectorized_contents)
+        response = Settings.vectorized_container.create_item(body=vectorized_contents)
     except Exception as e:
         print(e)
-  
+
 def embed(content) -> List[float]:
-    openai.api_key = settings.OPENAI_API_KEY
+    openai.api_key = Settings.OPENAI_API_KEY
     res = openai.embeddings.create(
-        input=content, model=settings.EMBEDDING_MODEL
+        input=content, model=Settings.EMBEDDING_MODEL
     )
     doc_embeds = [r.embedding for r in res.data]
     return doc_embeds
@@ -115,10 +124,10 @@ def embed(content) -> List[float]:
 # Function to move a blob to a processed container
 def move_blob(resumes_blob, destination_container_name):
     # Get the source and destination blob clients
-    source_blob = settings.blob_service_client.get_blob_client(
+    source_blob = Settings.blob_service_client.get_blob_client(
         "resumes", resumes_blob.name.split("/")[-1]
     )
-    destination_blob = settings.blob_service_client.get_blob_client(
+    destination_blob = Settings.blob_service_client.get_blob_client(
         destination_container_name, resumes_blob.name.split("/")[-1] + str(uuid.uuid4())
     )
     # Copy the blob from the source to the destination
@@ -128,7 +137,7 @@ def move_blob(resumes_blob, destination_container_name):
     return destination_blob.url
 
 def store_resume_text_in_blob(text):
-    blob_client = settings.blob_service_client.get_blob_client("resumetext",
+    blob_client = Settings.blob_service_client.get_blob_client("resumetext",
                                                       "consolidated_resumes.txt")
     blob_client.append_block(text)
 
@@ -159,7 +168,7 @@ def receive_pdf(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         # Push pdf to blob storage
-        blob_client = settings.blob_service_client.get_blob_client("resumes", filename)
+        blob_client = Settings.blob_service_client.get_blob_client("resumes", filename)
         blob_client.upload_blob(file)
     except Exception as e:
         return error_handler(
@@ -184,14 +193,14 @@ def pdf_loader(myblob: func.InputStream):
     # Check if file is not None
     if file is None:
         return error_handler("pdf_loader(): No file found in the blob.", 400)
-    
-    
+
+
     file_location = move_blob(myblob, "processed")
     store_resume_text_in_blob(resume_text)
     process_pdf(file, file_location)
-    
+
 def process_pdf(file, file_location):
-    
+
     # Create a file-like object from the file
     f = io.BytesIO(file)
 
@@ -206,19 +215,19 @@ def process_pdf(file, file_location):
 
 
 
-    
+
 
     if mydoc.pages is None:
         return error_handler("pdf_loader(): No pages found in the PDF.", 400)
-    
+
     # Loop through each page in the PDF
     for page in mydoc.pages:
         # Extract the text from the page
         resume_text += page.extract_text()
 
     summary_text = summarize_resume(resume_text)
-    
-    
+
+
     upsert_resume(summary_text, file_location)
 
 
@@ -249,7 +258,7 @@ def summarizePDF(req: func.HttpRequest) -> func.HttpResponse:
             f"summarizePDF(): An error occurred while reading the file: {e}",
             status_code=500,
         )
-    
+
     # Create a file-like object from the file
     f = io.BytesIO(file)
 
@@ -264,7 +273,7 @@ def summarizePDF(req: func.HttpRequest) -> func.HttpResponse:
 
     if mydoc.pages is None:
         return error_handler("pdf_loader(): No pages found in the PDF.", 400)
-    
+
     # Loop through each page in the PDF
     for page in mydoc.pages:
         # Extract the text from the page
@@ -285,16 +294,16 @@ def query_resume(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Query resume function processed a request.')
 
     search = req.params.get('search')
-    
+
     if search:
-        openai.api_key = settings.OPENAI_API_KEY
-        pinecone = Pinecone(api_key=settings.PINECONE_API_KEY)
+        openai.api_key = Settings.OPENAI_API_KEY
+        pinecone = Pinecone(api_key=Settings.PINECONE_API_KEY)
         res = openai.embeddings.create(
-            input=search, model=settings.EMBEDDING_MODEL
+            input=search, model=Settings.EMBEDDING_MODEL
         )
         doc_embeds = [r.embedding for r in res.data]
 
-        index = pinecone.Index(settings.EMBEDDING_MODEL)
+        index = pinecone.Index(Settings.EMBEDDING_MODEL)
         result = index.query(include_metadata=True, vector=doc_embeds[0], top_k=5)
         return func.HttpResponse(f"{result}")
     else:
@@ -302,4 +311,4 @@ def query_resume(req: func.HttpRequest) -> func.HttpResponse:
              "This HTTP triggered function executed successfully. Pass a search in the query string or in the request.",
              status_code=200
         )
-    
+
