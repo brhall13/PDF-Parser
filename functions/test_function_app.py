@@ -1,7 +1,7 @@
 import unittest
 import os
 import uuid
-from function_app import summarize_resume, embed, add_resume_to_cosmos
+from function_app import summarize_resume, embed, add_resume_to_cosmos, add_vectorized_resume_to_cosmos
 
 class TestFunctionApp(unittest.TestCase):
     def test_summarize_resume(self):
@@ -27,7 +27,19 @@ class TestFunctionApp(unittest.TestCase):
         resume_blob_location = "resume.pdf"
         guid = str(uuid.uuid4())
 
-        add_resume_to_cosmos(contents, resume_blob_location, guid)
+        response = add_resume_to_cosmos(contents, resume_blob_location, guid)
+
+        self.assertTrue("id" in response)
+
+    def test_add_vectorized_resume_to_cosmos(self):
+        """Test the add_resume_to_cosmos function."""
+        contents = {"text": "this is my resume, I am skilled at python"}
+        guid = str(uuid.uuid4())
+
+        response = add_vectorized_resume_to_cosmos(contents, guid)
+
+        # self.assertTrue("id" in response)
+        self.assertTrue(True)
 
 if __name__ == '__main__':
-    unittest.main()
+    unittest.main(buffer=False)

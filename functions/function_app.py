@@ -95,22 +95,26 @@ def upsert_resume(contents, resume_blob_location):
     add_vectorized_resume_to_cosmos(contents, guid)
 
 # Creates a new item in the Cosmos DB container
-def add_resume_to_cosmos(contents, resume_blob_location, guid):
+def add_resume_to_cosmos(contents, resume_blob_location, guid)->List[any]:
     contents["id"] = guid
     contents["resume_uri"] = resume_blob_location
     try:
         container = Settings.get_container()
         response = container.create_item(body=contents)
+        return response
     except Exception as e:
         print("add_resume_to_cosmos: ")
         print(e)
+        return None
 
-def add_vectorized_resume_to_cosmos(contents, guid):
-    try:
+def add_vectorized_resume_to_cosmos(contents, guid)->List[any]:
+    #try:
         vectorized_contents = embed(contents["text"])
         vectorized_contents["id"] = guid
-        response = Settings.vectorized_container.create_item(body=vectorized_contents)
-    except Exception as e:
+        container = Settings.get_vectorized_container()
+        response = container.create_item(body=vectorized_contents)
+        return response
+    #except Exception as e:
         print(e)
 
 def embed(content) -> List[float]:
@@ -238,6 +242,15 @@ def error_handler(message, status_code, exception=None):
 @app.function_name("summarizePDF")
 @app.route(route="summarizePDF", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def summarizePDF(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Endpoint to summarize the text content of a PDF file.
+
+    Args:
+        req (func.HttpRequest): The HTTP request object.
+
+    Returns:
+        func.HttpResponse: The HTTP response object containing the summarized text.
+    """
     logging.info("summarizePDF(): Receiving a PDF file. ")
 
     # Check if req.files is not None
